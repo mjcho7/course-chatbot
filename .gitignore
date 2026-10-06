@@ -1,0 +1,7 @@
+.env
+.venv/
+venv/
+__pycache__/
+logs/
+data/course_embeddings.npz
+data/faiss/
