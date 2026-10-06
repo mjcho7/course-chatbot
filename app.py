@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import hmac
 import re
 from pathlib import Path
 
@@ -13,6 +14,7 @@ from question_log import load_questions, save_question, update_rating
 from rag import (
     COURSES_PATH,
     course_ids_matching_metadata,
+    get_secret_value,
     get_course_data_summary,
     load_vectorstore,
     recommend_courses,
@@ -41,6 +43,25 @@ def inject_styles() -> None:
         </style>""",
         unsafe_allow_html=True,
     )
+
+
+def require_app_password() -> bool:
+    """APP_PASSWORD가 설정된 배포 환경에서만 암호 입력을 요구한다."""
+    expected_password = get_secret_value("APP_PASSWORD")
+    if not expected_password or st.session_state.get("authenticated"):
+        return True
+
+    st.title("🎓 강의 추천 챗봇")
+    st.info("이 서비스는 암호가 필요한 페이지입니다.")
+    with st.form("password_form"):
+        password = st.text_input("접속 암호", type="password")
+        submitted = st.form_submit_button("입장")
+    if submitted:
+        if hmac.compare_digest(password, expected_password):
+            st.session_state.authenticated = True
+            st.rerun()
+        st.error("암호가 올바르지 않습니다.")
+    return False
 
 
 @st.cache_data
@@ -262,6 +283,8 @@ def render_question_page() -> None:
 def main() -> None:
     """사이드바 메뉴에 따라 대시보드 페이지를 전환한다."""
     inject_styles()
+    if not require_app_password():
+        st.stop()
     st.session_state.courses = load_courses()
     st.session_state.turns = st.session_state.get("turns", [])
     try:

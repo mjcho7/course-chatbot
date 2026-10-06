@@ -36,10 +36,32 @@ STOP_WORDS = {"강의", "추천", "배우고", "싶어요", "알려줘", "방법
 
 
 def _require_api_key() -> None:
-    """프로젝트 루트의 .env에서 API 키를 읽고 존재 여부를 확인한다."""
+    """Streamlit Secrets 또는 로컬 .env에서 API 키를 읽어 환경 변수로 설정한다."""
+    api_key = get_secret_value("OPENAI_API_KEY")
+    if not api_key:
+        raise RuntimeError(
+            "OPENAI_API_KEY가 없습니다. PC에서는 .env에, Streamlit Cloud에서는 Secrets에 설정해 주세요."
+        )
+    # LangChain/OpenAI 클라이언트가 기존 방식대로 환경 변수에서 읽도록 유지한다.
+    os.environ["OPENAI_API_KEY"] = api_key
+
+
+def get_secret_value(name: str) -> str | None:
+    """Cloud의 st.secrets를 우선하고, PC에서는 프로젝트 루트 .env를 사용한다."""
+    try:
+        # Streamlit Cloud에서는 배포 환경의 Secrets가 이 경로로 제공된다.
+        import streamlit as st
+
+        value = st.secrets.get(name)
+        if value:
+            return str(value)
+    except Exception:
+        # 일반 Python 실행이나 로컬에서 secrets.toml이 없는 경우에는 .env로 이어진다.
+        pass
+
     load_dotenv(ROOT / ".env")
-    if not os.getenv("OPENAI_API_KEY"):
-        raise RuntimeError("프로젝트 루트의 .env에 OPENAI_API_KEY를 설정해 주세요.")
+    value = os.getenv(name)
+    return value if value else None
 
 
 def _to_document(course: dict[str, Any]) -> Document:
@@ -100,13 +122,13 @@ def get_course_data_summary() -> str:
 
 
 def load_vectorstore() -> FAISS:
-    """검색용으로 저장된 FAISS 인덱스만 읽는다."""
+    """저장소에 포함된 FAISS 인덱스만 읽고, 이 함수에서는 임베딩하지 않는다."""
     _require_api_key()
     embeddings = OpenAIEmbeddings(model=EMBEDDING_MODEL)
     index_file = FAISS_PATH / "index.faiss"
     store_file = FAISS_PATH / "index.pkl"
     if not index_file.exists() or not store_file.exists():
-        raise RuntimeError("FAISS 인덱스가 없습니다. update_faiss.bat를 먼저 실행해 주세요.")
+        raise RuntimeError("FAISS 인덱스가 없습니다. 배포 전 data/faiss를 저장소에 포함해 주세요.")
     # 이 파일은 이 앱이 data/faiss에 저장한 로컬 인덱스만 읽는다.
     return _load_vectorstore(embeddings)
 
